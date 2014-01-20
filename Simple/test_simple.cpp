@@ -1,8 +1,11 @@
 #include <vector>
 #include <iostream>
+#include <thread>
 
 #include "tbb/concurrent_queue.h"
 #include "tbb/parallel_for.h"
+
+bool stop = false;
 
 class MyTask
 {
@@ -15,12 +18,25 @@ public:
 
 		// Delay.
 		for (auto count_1 = 0; count_1 != delay; ++count_1)
+		{
+			if (!::stop)
 			for (int n = 0, limit = std::numeric_limits<int>::max(), dummy; n != limit; ++n)
 				dummy = n;
-
-		this->buffer_.push(this->id_);
-
-		std::cout << "Job finished: " << this->id << ": " << this->count << std::endl;
+			else
+			{
+				std::cout << "Stopping " << this->id << std::endl;
+				continue;
+			}				
+		}
+		if (!::stop)
+		{
+			this->buffer_.push(this->id);
+			std::cout << "Job finished: " << this->id << ": " << this->count << std::endl;
+		}
+		else
+		{
+			std::cout << "Job interrupted: " << this->id << std::endl;
+		}
 	}
 
 	int &id = this->id_;
@@ -65,14 +81,21 @@ public:
 	// More straightforward than using blocked_range.
 	void operator()(std::size_t i) const
 	{
-		std::cout << "Starting task " << this->tasks_[i].id << std::endl;
+		std::cout << "Executing task " << this->tasks_[i].id << " began." << std::endl;
 		this->tasks_[i]();
-		std::cout << "Completed task " << this->tasks_[i].id << std::endl;
+		std::cout << "Executing task " << this->tasks_[i].id << " ended." << std::endl;
 	}
 
 protected:
 	std::vector<MyTask> &tasks_;
 };
+
+void StopAll(void)
+{	
+	char ch;
+	std::cin >> ch;
+	::stop = true;
+}
 
 int main(void)
 {
@@ -86,12 +109,14 @@ int main(void)
 	tasks.push_back(MyTask(4, 1, sharedBuffer));
 
 	// Run tasks in parallel with range.
-	std::cout << "Starting tasks." << std::endl;
-	tbb::parallel_for(tbb::blocked_range<::size_t>(0, tasks.size()), ExecutionRange(tasks));
-	std::cout << "Completed all tasks." << std::endl;
+	//std::cout << "Starting tasks." << std::endl;
+	//tbb::parallel_for(tbb::blocked_range<::size_t>(0, tasks.size()), ExecutionRange(tasks));
+	//std::cout << "Completed all tasks." << std::endl;
 
 	// Run tasks in parallel with index.
 	std::cout << "Starting tasks." << std::endl;
+	std::thread t1(StopAll);
 	tbb::parallel_for(static_cast<std::size_t>(0), tasks.size(), Execution(tasks));
 	std::cout << "Completed all tasks." << std::endl;
+	t1.join();
 }
